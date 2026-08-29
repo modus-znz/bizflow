@@ -1,0 +1,15 @@
+# Line-item column layout for Le Delizie del Sud S.r.l. invoices.
+# Header names as printed; compound headers are word sequences, the x-center
+# of the LAST word anchors the column.
+code_regex: '^\d{13}$'
+columns:
+  qty: "Q.tà"
+  mpl:
+    header: "Mpl"
+    type: int
+  price: "Prezzo"
+  total:
+    header: ["P.zo", "Totale"]
+  piece_price:
+    header: ["P.zo", "Pz", "Imp."]
+    tol: 30

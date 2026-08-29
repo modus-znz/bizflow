@@ -1,0 +1,16 @@
+issuer: Le Delizie del Sud S.r.l.
+keywords:
+  - Le Delizie del Sud
+  - N° Documento
+fields:
+  invoice_number: 'N° Documento\s+(\d+)'
+  date: 'Data Emissione\s+(\d{2}/\d{2}/\d{4})'
+  amount: 'Totale Documento[\s\S]{0,400}?(\d{1,3}(?:\.\d{3})*,\d{2})'
+  vat_number: 'P\. I\.V\.A\.:(IT\d{11})'
+options:
+  currency: EUR
+  date_formats:
+    - '%d/%m/%Y'
+  decimal_separator: ','
+  languages:
+    - it
