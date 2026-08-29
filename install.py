@@ -16,6 +16,14 @@ Hard-won rules baked in (S398-S400):
   * never trust an install marker; smoke-test imports from inside the venv
 
 Usage: python3 install.py [--check] [--no-apt] [--no-bin] [--smoke-only]
+                          [--wheelhouse DIR]
+
+--wheelhouse DIR: install python deps offline from a directory of wheels
+(pip gets --no-index --find-links DIR). For servers with crawling PyPI
+egress: build it on a fast machine with
+  pip download -r requirements.txt -d wheelhouse/ && \
+  pip download setuptools wheel -d wheelhouse/
+then rsync the directory over and pass it here.
 """
 import argparse
 import os
@@ -72,14 +80,16 @@ def phase_apt(check):
     return False
 
 
-def phase_venv(check):
+def phase_venv(check, wheelhouse=None):
     if check:
         print(f"venv: {'exists' if VPY.exists() else 'WOULD create'} {VENV}")
         return True
     if not VPY.exists():
         run([sys.executable, "-m", "venv", "--system-site-packages", VENV])
-    run([VPIP, "install", "-q", "--upgrade", "pip"], capture_output=True)
-    r = run([VPIP, "install", "-q", "-e", REPO])
+    offline = ["--no-index", "--find-links", str(wheelhouse)] if wheelhouse else []
+    if not offline:
+        run([VPIP, "install", "-q", "--upgrade", "pip"], capture_output=True)
+    r = run([VPIP, "install", "-q"] + offline + ["-e", REPO])
     if r.returncode != 0:
         return False
     # gotcha guard: verify every import INSIDE the venv, heal with --ignore-installed
@@ -87,7 +97,8 @@ def phase_venv(check):
         if run([VPY, "-c", f"import {mod}"], capture_output=True).returncode != 0:
             pkg = {"yaml": "pyyaml"}.get(mod, mod)
             print(f"venv: {mod} broken (system-shadow gotcha) -> reinstalling")
-            run([VPIP, "install", "-q", "--upgrade", "--ignore-installed", pkg])
+            run([VPIP, "install", "-q", "--upgrade", "--ignore-installed"]
+                + offline + [pkg])
     BIN.mkdir(parents=True, exist_ok=True)
     link = BIN / "bizflow"
     if not link.exists():
@@ -169,6 +180,8 @@ def main():
     ap.add_argument("--no-apt", action="store_true")
     ap.add_argument("--no-bin", action="store_true")
     ap.add_argument("--smoke-only", action="store_true")
+    ap.add_argument("--wheelhouse", metavar="DIR",
+                    help="offline pip installs from this wheel directory")
     a = ap.parse_args()
 
     if a.smoke_only:
@@ -176,7 +189,7 @@ def main():
     results = {}
     if not a.no_apt:
         results["apt"] = phase_apt(a.check)
-    results["venv"] = phase_venv(a.check)
+    results["venv"] = phase_venv(a.check, a.wheelhouse)
     if not a.no_bin:
         results["bin"] = phase_bin(a.check)
     results["data"] = phase_data(a.check)
