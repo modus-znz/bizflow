@@ -51,6 +51,14 @@ ssh SERVER 'apt-get install --print-uris -y PKGS' | grep "^.http" | cut -d"'" -f
 xargs -P 8 -n 1 curl -sO < uris.txt   # into debs/
 rsync -a wheelhouse/ debs/ SERVER:...
 
+# If the rsync path itself crawls (e.g. relayed Tailscale) but the server has
+# healthy CDN peering: tar the payload, serve it locally over HTTP WITH Range
+# support (stdlib http.server answers 200-only; aria2c needs 206 to split),
+# expose it via a cloudflared quick tunnel, and pull on the server with
+#   aria2c -c -x 8 -s 8 -k 4M URL
+# Measured on town-noc: 25 KB/s rsync vs ~0.4-1.5 MB/s tunneled aria2c.
+# Always ship SHA256SUMS and gate on sha256sum -c before extracting.
+
 # on the server
 python3 install.py --no-apt --no-bin --wheelhouse ~/wheelhouse
 sudo apt-get install -y ~/debs/*.deb     # the one root step
