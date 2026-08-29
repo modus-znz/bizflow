@@ -48,7 +48,8 @@ pip download setuptools wheel -d wheelhouse/
 python3 -m venv /tmp/t && /tmp/t/bin/pip install --no-index --find-links wheelhouse/ -e .
 # apt layer: let the SERVER compute its own missing-deb closure, fetch here
 ssh SERVER 'apt-get install --print-uris -y PKGS' | grep "^.http" | cut -d"'" -f2 > uris.txt
-xargs -P 8 -n 1 curl -sO < uris.txt   # into debs/
+xargs -P 8 -n 1 curl -fsSO < uris.txt   # into debs/; -f or an error page becomes a .deb
+for f in debs/*.deb; do dpkg-deb -I "$f" >/dev/null || echo "BAD: $f"; done
 rsync -a wheelhouse/ debs/ SERVER:...
 
 # If the rsync path itself crawls (e.g. relayed Tailscale) but the server has
