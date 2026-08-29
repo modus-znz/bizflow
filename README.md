@@ -52,6 +52,13 @@ xargs -P 8 -n 1 curl -fsSO < uris.txt   # into debs/; -f or an error page become
 for f in debs/*.deb; do dpkg-deb -I "$f" >/dev/null || echo "BAD: $f"; done
 rsync -a wheelhouse/ debs/ SERVER:...
 
+# Debian-family server that reaches Cloudflare? Fetch debs on the server
+# straight from https://cloudflaremirrors.com/debian -- the official pool on
+# Cloudflare's CDN. Measured 6.9 MB/s where deb.debian.org crawled at 20 KB/s.
+# Note: apt-get install with local .deb args may still re-download some
+# same-version, same-hash packages from the archive (observed 6/30; suspected
+# %-encoded filenames / epoch mapping) -- decode names when pre-fetching.
+
 # If the rsync path itself crawls (e.g. relayed Tailscale) but the server has
 # healthy CDN peering: tar the payload, serve it locally over HTTP WITH Range
 # support (stdlib http.server answers 200-only; aria2c needs 206 to split),
