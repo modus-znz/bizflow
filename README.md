@@ -35,6 +35,27 @@ bizflow ocr scan.pdf clean.pdf              # searchable PDF/A (ita+eng)
 scripts/watch.sh ~/inbox ~/out              # hot folder daemon
 ```
 
+## Server deploy (slow-egress hosts)
+
+Some servers reach PyPI/mirrors at dial-up speed while inbound rsync from a
+dev machine runs fast. Ship everything pre-fetched:
+
+```bash
+# on the dev machine (matching OS/arch/python)
+pip download -r requirements.txt -d wheelhouse/
+pip download setuptools wheel -d wheelhouse/
+# verify completeness: offline install into a BARE venv must succeed
+python3 -m venv /tmp/t && /tmp/t/bin/pip install --no-index --find-links wheelhouse/ -e .
+# apt layer: let the SERVER compute its own missing-deb closure, fetch here
+ssh SERVER 'apt-get install --print-uris -y PKGS' | grep "^.http" | cut -d"'" -f2 > uris.txt
+xargs -P 8 -n 1 curl -sO < uris.txt   # into debs/
+rsync -a wheelhouse/ debs/ SERVER:...
+
+# on the server
+python3 install.py --no-apt --no-bin --wheelhouse ~/wheelhouse
+sudo apt-get install -y ~/debs/*.deb     # the one root step
+```
+
 ## Vendor onboarding (new supplier)
 
 1. `pdftotext -layout invoice.pdf -` and locate the label/value zones.
