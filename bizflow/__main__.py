@@ -1,10 +1,13 @@
 """bizflow CLI.
 
-  bizflow process  <pdf>   header JSON + line-item CSV/Parquet + summary
-  bizflow analyze  <csv>   duckdb reconciliation, brands, top items
-  bizflow optimize <csv>   EOQ table + optimal pallet packing
-  bizflow convert  <file>  anything -> Markdown
-  bizflow ocr <in> <out>   scanned/mixed PDF -> searchable PDF/A
+  bizflow process  <pdf>     header JSON + line-item CSV/Parquet + summary
+  bizflow analyze  <csv>     duckdb reconciliation, brands, top items
+  bizflow optimize <csv>     EOQ table + optimal pallet packing
+  bizflow convert  <file>    anything -> Markdown
+  bizflow ocr <in> <out>     scanned/mixed PDF -> searchable PDF/A
+  bizflow office <subcmd>    QR/Barcodes, PDF stamping, templating
+  bizflow doc <subcmd>       MS Office conversion (.docx, .xlsx, .pptx)
+  bizflow account <subcmd>   OFX statement parse, double-entry audit, PDF invoice
 """
 import argparse
 import csv
@@ -45,11 +48,9 @@ def cmd_process(a):
     if header:
         header = {k: str(v) for k, v in header.items()}
         (out / f"{stem}-header.json").write_text(json.dumps(header, indent=2))
-        print(f"header : {header.get('issuer')} n.{header.get('invoice_number')} "
-              f"{header.get('date')} {header.get('amount')} {header.get('currency')}")
+        print(f"header : {header.get('issuer')} n.{header.get('invoice_number')} {header.get('date')} {header.get('amount')} {header.get('currency')}")
     else:
-        print("header : no invoice2data template matched (add one under "
-              f"{tdir})", file=sys.stderr)
+        print(f"header : no invoice2data template matched (add one under {tdir})", file=sys.stderr)
 
     items = extract.harvest_items(a.pdf, extract.load_layout(a.layout))
     if not items:
@@ -65,7 +66,6 @@ def cmd_process(a):
 
 def cmd_analyze(a):
     from . import analyze
-
     print(analyze.render(analyze.summarize(a.csv, a.parquet)))
 
 
@@ -75,29 +75,59 @@ def cmd_optimize(a):
     items = _read_items(a.csv)
     n = optimize.attach_weights(items)
     kg = sum(r["kg"] for r in items if r.get("kg"))
-    print(f"weights: {n}/{len(items)} parsed from descriptions; "
-          f"shipment ~{kg:,.0f} kg")
-    print(f"\nEOQ (K={a.order_cost}, holding={a.holding:.0%}/yr, "
-          f"{a.cycles} cycles/yr):")
+    print(f"weights: {n}/{len(items)} parsed from descriptions; shipment ~{kg:,.0f} kg")
+    print(f"\nEOQ (K={a.order_cost}, holding={a.holding:.0%}/yr, {a.cycles} cycles/yr):")
     for r in optimize.eoq_table(items, a.order_cost, a.holding, a.cycles):
-        print(f"  {r['descrizione'][:40]:<42} qty {r['qty']:>5.0f}  "
-              f"EOQ {r['eoq']:>7.1f}  orders/yr {r['orders_per_year']:>4.1f}")
+        print(f"  {r['descrizione'][:40]:<42} qty {r['qty']:>5.0f}  EOQ {r['eoq']:>7.1f}  orders/yr {r['orders_per_year']:>4.1f}")
     count, loads, status = optimize.pack_pallets(items, a.pallet_cap)
     print(f"\npallets: {count} @ {a.pallet_cap} kg [{status}] loads={loads}")
 
 
 def cmd_convert(a):
     from . import convert
-
     md = convert.to_markdown(a.src, a.out)
     print(a.out if a.out else md)
 
 
 def cmd_ocr(a):
     from . import convert
-
     convert.ocr(a.src, a.dst, lang=a.lang)
     print(f"ocr    : {a.dst} (searchable PDF/A, lang={a.lang})")
+
+
+def cmd_office(a):
+    from . import office
+    if a.office_cmd == "qr":
+        office.generate_qr(a.text, a.out)
+    elif a.office_cmd == "stamp":
+        office.stamp_pdf(a.pdf, a.out, a.text)
+    elif a.office_cmd == "hash":
+        office.hash_document(a.file)
+
+
+def cmd_doc(a):
+    from . import doc
+    if a.doc_cmd == "docx":
+        doc.convert_docx_to_md(a.src, a.out)
+    elif a.doc_cmd == "xlsx":
+        doc.convert_xlsx_to_json(a.src, a.out)
+    elif a.doc_cmd == "pptx":
+        doc.extract_pptx_text(a.src, a.out)
+
+
+def cmd_account(a):
+    from . import account
+    if a.account_cmd == "parse":
+        txs = account.parse_statement(a.file, a.out)
+        account.verify_ledger(txs)
+    elif a.account_cmd == "invoice":
+        data = {
+            "invoice_number": a.num,
+            "vendor": a.vendor,
+            "client": a.client,
+            "items": [{"desc": "Services Rendered", "qty": 1, "price": float(a.amount)}]
+        }
+        account.generate_invoice_pdf(data, a.out)
 
 
 def main():
@@ -105,6 +135,7 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    # Core Subcommands
     s = sub.add_parser("process")
     s.add_argument("pdf")
     s.add_argument("--layout", default=str(DEFAULT_LAYOUT))
@@ -135,6 +166,56 @@ def main():
     s.add_argument("dst")
     s.add_argument("--lang", default="ita+eng")
     s.set_defaults(fn=cmd_ocr)
+
+    # Office Subcommand
+    so = sub.add_parser("office")
+    so_sub = so.add_subparsers(dest="office_cmd", required=True)
+    
+    sq = so_sub.add_parser("qr")
+    sq.add_argument("text")
+    sq.add_argument("-o", "--out", default="qrcode.png")
+    
+    sst = so_sub.add_parser("stamp")
+    sst.add_argument("pdf")
+    sst.add_argument("--text", default="APPROVED")
+    sst.add_argument("-o", "--out", default="stamped.pdf")
+    
+    sh = so_sub.add_parser("hash")
+    sh.add_argument("file")
+    so.set_defaults(fn=cmd_office)
+
+    # Doc Subcommand
+    sd = sub.add_parser("doc")
+    sd_sub = sd.add_subparsers(dest="doc_cmd", required=True)
+    
+    sdocx = sd_sub.add_parser("docx")
+    sdocx.add_argument("src")
+    sdocx.add_argument("-o", "--out", default="doc.md")
+    
+    sxlsx = sd_sub.add_parser("xlsx")
+    sxlsx.add_argument("src")
+    sxlsx.add_argument("-o", "--out", default="sheets.json")
+    
+    spptx = sd_sub.add_parser("pptx")
+    spptx.add_argument("src")
+    spptx.add_argument("-o", "--out", default="presentation.txt")
+    sd.set_defaults(fn=cmd_doc)
+
+    # Account Subcommand
+    sa = sub.add_parser("account")
+    sa_sub = sa.add_subparsers(dest="account_cmd", required=True)
+    
+    sap = sa_sub.add_parser("parse")
+    sap.add_argument("file")
+    sap.add_argument("-o", "--out", default="statement-parsed.csv")
+    
+    sainv = sa_sub.add_parser("invoice")
+    sainv.add_argument("--num", default="1001")
+    sainv.add_argument("--vendor", default="BizFlow Admin")
+    sainv.add_argument("--client", default="Valued Customer")
+    sainv.add_argument("--amount", type=float, default=1500.0)
+    sainv.add_argument("-o", "--out", default="invoice.pdf")
+    sa.set_defaults(fn=cmd_account)
 
     a = p.parse_args()
     a.fn(a)

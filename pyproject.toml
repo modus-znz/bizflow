@@ -15,6 +15,15 @@ dependencies = [
     "stockpyl",
     "ortools",
     "pyyaml",
+    "ofxparse",
+    "reportlab",
+    "qrcode",
+    "python-docx",
+    "openpyxl",
+    "python-pptx",
+    "pdf2image",
+    "pypdf",
+    "jinja2",
 ]
 
 [project.scripts]
